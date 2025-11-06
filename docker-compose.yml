@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: containerdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    environment:
+      PORT: "8081"
+      PROVIDER: "docker"
+      JWT_SECRET: "devsecret"
+      AUTH_USER: "admin"
+      AUTH_PASS: "admin"
+      DATA_DIR: "/app/data"
+      HOST_DATA_DIR: "${HOST_DATA_DIR}"
+      DB_HOST: "postgres"
+      DB_PORT: "5432"
+      DB_USER: "postgres"
+      DB_PASSWORD: "postgres"
+      DB_NAME: "containerdb"
+      DATABASE_URL: ""
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${HOST_DATA_DIR}:/app/data
+
+volumes:
+  pgdata: {}
+

@@ -1,0 +1,9 @@
+total 24
+drwxr-xr-x    8 root     root           256 Nov  6 13:48 .
+drwxr-xr-x    1 root     root          4096 Nov  6 13:48 ..
+-rw-r--r--    1 root     root            23 Nov  6 13:47 a.csv
+-rw-r--r--    1 root     root           873 Nov  6 13:47 app.go
+-rw-r--r--    1 root     root           698 Nov  6 13:47 app.py
+-rw-r--r--    1 root     root            56 Nov  6 13:47 b.json
+-rw-r--r--    1 root     root             0 Nov  6 13:48 list.txt
+-rwxr-xr-x    1 root     root           334 Nov  6 13:47 run.sh

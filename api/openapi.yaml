@@ -1,0 +1,103 @@
+openapi: 3.0.3
+info:
+  title: AIDMS 容器管理系統 API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+paths:
+  /healthz:
+    get:
+      summary: 健康檢查
+      responses:
+        '200':
+          description: OK
+  /v1/uploads:
+    post:
+      summary: 多檔案上傳
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                userId:
+                  type: string
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200':
+          description: 上傳成功
+  /v1/containers:
+    post:
+      summary: 建立容器
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [image]
+              properties:
+                name:
+                  type: string
+                image:
+                  type: string
+      responses:
+        '201':
+          description: 已建立
+  /v1/containers/{id}/start:
+    post:
+      summary: 啟動容器
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204': { description: No Content }
+        '404': { description: Not Found }
+  /v1/containers/{id}/stop:
+    post:
+      summary: 停止容器
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204': { description: No Content }
+        '404': { description: Not Found }
+  /v1/containers/{id}:
+    delete:
+      summary: 刪除容器
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        '204': { description: No Content }
+        '404': { description: Not Found }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
