@@ -22,22 +22,66 @@ func main() {
 
 	// 2) 上傳檔案（使用 demo/files 下的範例）
 	//    回傳值中的 dir 將被用來掛載到容器
-	//    這裡一次上傳多種範例檔，API 端會自動偵測可執行的類型
 	dir := upload(base+"/v1/uploads", token, map[string]string{"userId": "u123"},
 		[]string{"files/a.csv", "files/b.json", "files/app.py"})
 	fmt.Println("✓ 上傳完成:", dir)
 
-	// 3) 不指定 image/cmd，交由 API 端自動偵測可執行內容
-	jobResp := runJob(base+"/v1/jobs", token, map[string]any{
-		"hostDir":      dir,
-		"containerDir": "/workspace",
+	// 3) 建立並啟動容器（Python），並掛載上傳的目錄
+	//    注意：dir 是容器內路徑（如 /app/data/...），需要轉換為宿主機路徑
+	//    這裡假設宿主機路徑與容器內路徑相同（在 Docker Compose 中已映射）
+	//    實際使用時，需要根據 HOST_DATA_DIR 轉換
+	cid := createContainer(base, token, map[string]any{
+		"image": "python:3.11-slim",
+		"name":  "demo",
+		"mounts": map[string]string{
+			dir: "/workspace", // 掛載上傳目錄到容器的 /workspace
+		},
 	})
-	fmt.Printf("✓ Job 完成，exitCode=%v\n", jobResp.ExitCode)
+	fmt.Printf("✓ 容器建立完成，ID: %s\n", cid)
+	doEmpty(base+"/v1/containers/"+cid+"/start", token, "POST")
+	fmt.Println("✓ 容器啟動完成")
+
+	// 4) 在既有容器內執行 app.py（使用掛載的目錄）
+	er := runExec(base+"/v1/containers/"+cid+"/exec", token, map[string]any{
+		"cmd": []string{"python", "/workspace/app.py"},
+	})
+	fmt.Printf("✓ Exec 完成，exitCode=%v\n", er.ExitCode)
 
 	// 4) 提示可以透過靜態路徑檢視結果
 	//    http://<host>/static/<userId>/<batch>/list.txt
 	if u, err := url.Parse(base); err == nil {
 		fmt.Printf("結果檔案（可能的網址）：%s/static/%s/list.txt\n", u.Host, trimStaticRoot(dir))
+	}
+}
+
+func createContainer(base, token string, payload map[string]any) string {
+	b, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", base+"/v1/containers", bytes.NewReader(b))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	check(err)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		bs, _ := io.ReadAll(res.Body)
+		panic(fmt.Sprintf("create status %d: %s", res.StatusCode, bs))
+	}
+	var out struct {
+		ID string `json:"id"`
+	}
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return out.ID
+}
+
+func doEmpty(urlStr, token, method string) {
+	req, _ := http.NewRequest(method, urlStr, nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res, err := http.DefaultClient.Do(req)
+	check(err)
+	defer res.Body.Close()
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		b, _ := io.ReadAll(res.Body)
+		panic(fmt.Sprintf("status %d: %s", res.StatusCode, b))
 	}
 }
 
@@ -113,6 +157,29 @@ func runJob(urlStr, token string, payload map[string]any) jobResp {
 		panic(fmt.Sprintf("job status %d: %s", res.StatusCode, b))
 	}
 	var out jobResp
+	_ = json.NewDecoder(res.Body).Decode(&out)
+	return out
+}
+
+type execResp struct {
+	ExitCode int    `json:"exitCode"`
+	Logs     string `json:"logs"`
+	TaskID   string `json:"taskId"`
+}
+
+func runExec(urlStr, token string, payload map[string]any) execResp {
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", urlStr, bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	res, err := http.DefaultClient.Do(req)
+	check(err)
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(res.Body)
+		panic(fmt.Sprintf("exec status %d: %s", res.StatusCode, b))
+	}
+	var out execResp
 	_ = json.NewDecoder(res.Body).Decode(&out)
 	return out
 }

@@ -9,13 +9,16 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"container-manager/internal/containers"
+	"container-manager/internal/storage"
 )
 
 var Svc = containers.NewService()
 
 type createContainerDTO struct {
-	Name  string `json:"name" binding:"omitempty"`
-	Image string `json:"image" binding:"required"`
+	Name         string            `json:"name" binding:"omitempty"`
+	Image        string            `json:"image" binding:"required"`
+	Mounts       map[string]string `json:"mounts" binding:"omitempty"`       // hostDir -> containerDir
+	ContainerDir string            `json:"containerDir" binding:"omitempty"` // 簡化：單一掛載點時使用
 }
 
 func CreateContainer(c *gin.Context) {
@@ -24,7 +27,46 @@ func CreateContainer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	res, err := Svc.Create(containers.CreateOptions{Name: dto.Name, Image: dto.Image})
+	// Convert container paths to host paths for mounts (similar to RunJob)
+	convertedMounts := make(map[string]string)
+	for hostDir, containerDir := range dto.Mounts {
+		// Ensure absolute host path
+		if !filepath.IsAbs(hostDir) {
+			abs, err := filepath.Abs(hostDir)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid hostDir in mounts"})
+				return
+			}
+			hostDir = abs
+		}
+		// Convert container path to host path if running in container
+		dataDir := os.Getenv("DATA_DIR")
+		if dataDir == "" {
+			dataDir = "./data"
+		}
+		absDataDir, _ := filepath.Abs(dataDir)
+		hostDataDir := os.Getenv("HOST_DATA_DIR")
+		if hostDataDir != "" && strings.HasPrefix(hostDir, absDataDir) {
+			rel := strings.TrimPrefix(hostDir, absDataDir)
+			if len(rel) > 0 && (rel[0] == '/' || rel[0] == '\\') {
+				rel = rel[1:]
+			}
+			hostDir = filepath.Join(hostDataDir, rel)
+			if !filepath.IsAbs(hostDir) {
+				abs, _ := filepath.Abs(hostDir)
+				if abs != "" {
+					hostDir = abs
+				}
+			}
+		}
+		convertedMounts[hostDir] = containerDir
+	}
+	opts := containers.CreateOptions{
+		Name:   dto.Name,
+		Image:  dto.Image,
+		Mounts: convertedMounts,
+	}
+	res, err := Svc.Create(opts)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -142,6 +184,37 @@ func RunJob(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"exitCode": code, "logs": logs})
+}
+
+// ---- Exec in container ----
+type execDTO struct {
+	Cmd []string `json:"cmd" binding:"required,min=1"`
+}
+
+func ExecInContainer(c *gin.Context) {
+	id := c.Param("id")
+	var dto execDTO
+	if err := c.ShouldBindJSON(&dto); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	// record task
+	db, _ := storage.OpenDefault()
+	_ = storage.Migrate(db)
+	taskRepo := storage.NewTaskRepository(db)
+	taskID, _ := taskRepo.Insert(id, dto.Cmd)
+	// run
+	code, logs, err := Svc.Exec(id, dto.Cmd)
+	status := storage.TaskSucceeded
+	if err != nil || code != 0 {
+		status = storage.TaskFailed
+	}
+	_ = taskRepo.UpdateResult(taskID, status, code, logs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error(), "exitCode": code, "logs": logs})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"exitCode": code, "logs": logs, "taskId": taskID})
 }
 
 // detectProgram 依序檢查可執行檔與常見腳本，回傳對應的映像與命令。

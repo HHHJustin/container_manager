@@ -29,6 +29,7 @@ func Run(addr string) error {
 		v1.POST("/containers", handlers.CreateContainer)
 		v1.POST("/containers/:id/start", handlers.StartContainer)
 		v1.POST("/containers/:id/stop", handlers.StopContainer)
+		v1.POST("/containers/:id/exec", handlers.ExecInContainer)
 		v1.DELETE("/containers/:id", handlers.DeleteContainer)
 		v1.POST("/jobs", handlers.RunJob)
 	}

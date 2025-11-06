@@ -61,6 +61,11 @@ func (s *Service) Delete(id string) error {
 	return nil
 }
 
+// Exec runs command inside an existing container. No DB write by default.
+func (s *Service) Exec(id string, cmd []string) (int, string, error) {
+    return s.provider.Exec(id, cmd)
+}
+
 // RunJob 如果底層 provider 支援 JobRunner，則執行一次性作業。
 func (s *Service) RunJob(opts JobOptions) (int64, string, error) {
     if jr, ok := s.provider.(JobRunner); ok {

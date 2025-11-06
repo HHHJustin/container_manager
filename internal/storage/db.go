@@ -22,13 +22,23 @@ func OpenDefault() (*sql.DB, error) {
 }
 
 func Migrate(db *sql.DB) error {
-	_, err := db.Exec(`
+    _, err := db.Exec(`
 CREATE TABLE IF NOT EXISTS containers (
     id TEXT PRIMARY KEY,
     name TEXT,
     image TEXT,
     status TEXT,
     created_at BIGINT
+);
+CREATE TABLE IF NOT EXISTS container_tasks (
+    id TEXT PRIMARY KEY,
+    container_id TEXT,
+    cmd_json TEXT,
+    status TEXT,
+    exit_code INT,
+    logs TEXT,
+    created_at BIGINT,
+    finished_at BIGINT
 );
 `)
 	return err

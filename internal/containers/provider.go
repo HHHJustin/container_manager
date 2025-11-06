@@ -18,8 +18,10 @@ type Container struct {
 
 // CreateOptions 建立容器所需參數。
 type CreateOptions struct {
-	Name  string `json:"name"`  // 可選
-	Image string `json:"image"` // 必填
+	Name         string            `json:"name"`         // 可選
+	Image        string            `json:"image"`        // 必填
+	Mounts       map[string]string `json:"mounts"`       // 可選：hostDir -> containerDir 的映射
+	ContainerDir string            `json:"containerDir"` // 可選：預設掛載目錄（如果只有一個掛載點）
 }
 
 // Provider 提供容器操作抽象。
@@ -28,6 +30,7 @@ type Provider interface {
 	Start(id string) error
 	Stop(id string) error
 	Delete(id string) error
+    Exec(id string, cmd []string) (exitCode int, logs string, err error)
 }
 
 // JobOptions 定義一次性作業的參數：將主機資料夾掛載進容器並執行命令。

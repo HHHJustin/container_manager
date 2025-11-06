@@ -1,8 +1,9 @@
+// +build ignore
+
 package main
 
 import (
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"

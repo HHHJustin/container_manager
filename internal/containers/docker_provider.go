@@ -28,7 +28,36 @@ func (d *DockerProvider) Create(opts CreateOptions) (Container, error) {
 	}
 
 	name := opts.Name
-	resp, err := d.cli.ContainerCreate(ctx, &container.Config{Image: opts.Image}, nil, nil, nil, name)
+	// Use a long-running command to keep container running for exec
+	// Different images may have different default commands, so we use a universal one
+	config := &container.Config{
+		Image: opts.Image,
+		Cmd:   []string{"tail", "-f", "/dev/null"}, // Keep container running
+	}
+
+	// Build mounts if provided
+	var hostConfig *container.HostConfig
+	if len(opts.Mounts) > 0 || opts.ContainerDir != "" {
+		mounts := []mount.Mount{}
+		if opts.ContainerDir != "" {
+			// Single mount: use ContainerDir as target, need hostDir from caller
+			// This is a simplified case - caller should provide both hostDir and containerDir
+		}
+		for hostDir, containerDir := range opts.Mounts {
+			mounts = append(mounts, mount.Mount{
+				Type:   mount.TypeBind,
+				Source: hostDir,
+				Target: containerDir,
+			})
+		}
+		if len(mounts) > 0 {
+			hostConfig = &container.HostConfig{
+				Mounts: mounts,
+			}
+		}
+	}
+
+	resp, err := d.cli.ContainerCreate(ctx, config, hostConfig, nil, nil, name)
 	if err != nil {
 		return Container{}, err
 	}
@@ -58,6 +87,37 @@ func (d *DockerProvider) Stop(id string) error {
 func (d *DockerProvider) Delete(id string) error {
 	ctx := context.Background()
 	return d.cli.ContainerRemove(ctx, id, container.RemoveOptions{Force: true})
+}
+
+// Exec runs a command inside an existing container.
+func (d *DockerProvider) Exec(id string, cmd []string) (int, string, error) {
+	ctx := context.Background()
+	// Use container.ExecOptions for v28 SDK
+	execResp, err := d.cli.ContainerExecCreate(ctx, id, container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+		Tty:          false,
+	})
+	if err != nil {
+		return 0, "", err
+	}
+	// Start exec (no attach; logs not captured in this minimal variant)
+	if err := d.cli.ContainerExecStart(ctx, execResp.ID, container.ExecStartOptions{Detach: false, Tty: false}); err != nil {
+		return 0, "", err
+	}
+
+	// Poll for exit code
+	for {
+		inspectResp, err := d.cli.ContainerExecInspect(ctx, execResp.ID)
+		if err != nil {
+			return 0, "", err
+		}
+		if !inspectResp.Running {
+			return inspectResp.ExitCode, "", nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 // RunJob 實作一次性作業：綁定 host 資料夾並執行命令，回傳退出碼與日誌。

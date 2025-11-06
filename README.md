@@ -1,12 +1,12 @@
-# 容器管理系統（AIDMS 實作）
+# 容器管理系統
 
-本專案以 Go + Gin 實作容器管理系統的 RESTful API。重點包含清楚分層、Middleware、抽象介面（Provider）、SQLite 資料持久化、檔案上傳與 OpenAPI 文件。
+本專案以 Go + Gin 實作容器管理系統的 RESTful API。重點包含：清楚分層、Middleware、抽象介面（Provider：mock/docker）、PostgreSQL 紀錄容器狀態、檔案上傳與 OpenAPI 文件、JWT 驗證。
 
 ## 專案結構
 
 ```
 容器管理系統/
-├─ cmd/server/main.go
+├─ cmd/main.go
 ├─ internal/
 │  ├─ server/router.go
 │  ├─ middleware/{auth,logger,recover}.go
@@ -29,7 +29,7 @@
 ```bash
 export PORT=8080
 export DATA_DIR=./data
-export PROVIDER=mock  # mock | docker
+export PROVIDER=mock  # mock | docker（啟用 docker 時需本機 Docker 可用）
 export JWT_SECRET=devsecret
 export AUTH_USER=admin
 export AUTH_PASS=admin
@@ -42,7 +42,7 @@ go mod tidy
 go run ./cmd
 ```
 
-### 方式二：Docker Compose（生產用）
+### 方式二：Docker Compose（容器化）
 
 1. 設定環境變數（在 `container_manager` 目錄下）：
 
@@ -64,43 +64,57 @@ docker compose up --build
 
 **注意**：使用 Docker Compose 時，`HOST_DATA_DIR` 必須是**絕對路徑**，因為容器內的程式需要知道宿主機上 data 目錄的實際位置，才能正確進行 Docker bind mount。
 
-## 測試請求範例
+## OpenAPI 與範例
 
-- 健康檢查：
+檔案：`api/openapi.yaml`
 
-```
-curl http://localhost:8080/healthz
-```
+### 快速測試 OpenAPI
+- Swagger Editor：`https://editor.swagger.io` → Import 本檔
+- 本地 Swagger UI：
+  ```bash
+  docker run --rm -p 8082:8080 \
+    -e SWAGGER_JSON=/spec/openapi.yaml \
+    -v "$(pwd)/api/openapi.yaml:/spec/openapi.yaml" \
+    swaggerapi/swagger-ui
+  ```
+  打開 `http://localhost:8082`，先呼叫 `POST /login` 取得 JWT，點 Authorize 帶入 `Bearer <token>`。
 
-- 上傳檔案：
-
-```
-curl -H "Authorization: Bearer devtoken" \
-     -F "files=@/path/to/a.csv" -F "files=@/path/to/b.json" \
-     -F "userId=u123" \
-     http://localhost:8080/v1/uploads
-```
-
-- 建立 / 啟動 / 停止 / 刪除容器（Mock Provider）：
-
-```
-# 建立
-curl -H "Authorization: Bearer devtoken" -H "Content-Type: application/json" \
-     -d '{"image":"alpine:latest","name":"demo"}' \
-     http://localhost:8080/v1/containers
-
-# 假設回傳 {"id":"<CID>"...}
-CID=<回傳的 id>
-
-curl -H "Authorization: Bearer devtoken" -X POST http://localhost:8080/v1/containers/$CID/start
-curl -H "Authorization: Bearer devtoken" -X POST http://localhost:8080/v1/containers/$CID/stop
-curl -H "Authorization: Bearer devtoken" -X DELETE http://localhost:8080/v1/containers/$CID
-```
+### 範例 Request/Response
+- 登入（POST /login）
+  ```json
+  { "username": "admin", "password": "admin" }
+  ```
+  回應：
+  ```json
+  { "token": "<JWT>" }
+  ```
+- 上傳（POST /v1/uploads）回應：
+  ```json
+  { "userId": "u123", "dir": "./data/u123/2025...", "files": ["..."] }
+  ```
+- 執行作業（POST /v1/jobs）請求（顯式指定）：
+  ```json
+  {
+    "image": "python:3.11-slim",
+    "hostDir": "<上一步回傳的 dir>",
+    "containerDir": "/workspace",
+    "cmd": ["python", "/workspace/app.py"]
+  }
+  ```
+  回應：
+  ```json
+  { "exitCode": 0, "logs": "..." }
+  ```
+  若未提供 `image/cmd`，系統會自動偵測（app 可執行 > run.sh > app.py > app.go）。
 
 ## API 規格
 
-OpenAPI 位於 `api/openapi.yaml`，可匯入 Swagger UI 或 Postman 使用。
+可將 `api/openapi.yaml` 匯入 Swagger UI / Postman / Insomnia 直接操作。
 
 ## 測試
 
-執行 `go test ./...` 可進行單元與整合測試；Mock Provider 使得在 CI 環境（無 Docker）也能順利測試。
+執行 `go test ./...` 可進行單元與整合測試；Mock Provider 使得在 CI（無 Docker）也能順利測試。
+
+## 注意事項
+- 驗證採 JWT：請先 `POST /login` 取得 Token，再於受保護路由以 `Authorization: Bearer <token>` 呼叫。
+- Docker Compose 時請務必設定 `HOST_DATA_DIR` 為宿主機的**絕對路徑**，並與 `DATA_DIR=/app/data` 映射一致。

@@ -65,3 +65,13 @@ func (m *MockProvider) Delete(id string) error {
 	delete(m.containers, id)
 	return nil
 }
+
+func (m *MockProvider) Exec(id string, cmd []string) (int, string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if _, ok := m.containers[id]; !ok {
+		return 0, "", ErrNotFound
+	}
+	// Mock: 模擬執行成功，回傳命令內容
+	return 0, "mock exec: " + cmd[0], nil
+}

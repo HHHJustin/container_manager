@@ -5,6 +5,31 @@ info:
 servers:
   - url: http://localhost:8080
 paths:
+  /login:
+    post:
+      summary: 登入取得 JWT
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string, example: admin }
+                password: { type: string, example: admin }
+            example:
+              username: admin
+              password: admin
+      responses:
+        '200':
+          description: JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string, example: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9... }
   /healthz:
     get:
       summary: 健康檢查
@@ -30,9 +55,28 @@ paths:
                   items:
                     type: string
                     format: binary
+             example:
+               userId: u123
+               files: [a.csv, b.json]
       responses:
         '200':
           description: 上傳成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  userId: { type: string }
+                  dir: { type: string, description: 上傳於伺服器端的存放目錄（相對於 DATA_DIR 或絕對路徑） }
+                  files:
+                    type: array
+                    items: { type: string }
+              example:
+                userId: u123
+                dir: ./data/u123/20250101T000000Z
+                files:
+                  - ./data/u123/20250101T000000Z/a.csv
+                  - ./data/u123/20250101T000000Z/b.json
   /v1/containers:
     post:
       summary: 建立容器
@@ -50,9 +94,22 @@ paths:
                   type: string
                 image:
                   type: string
+            example:
+              name: demo
+              image: alpine:3.20
       responses:
         '201':
           description: 已建立
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+                  image: { type: string }
+                  status: { type: string, example: created }
+                  createdAt: { type: integer, format: int64 }
   /v1/containers/{id}/start:
     post:
       summary: 啟動容器
@@ -95,6 +152,84 @@ paths:
       responses:
         '204': { description: No Content }
         '404': { description: Not Found }
+  /v1/containers/{id}/exec:
+    post:
+      summary: 在既有容器內執行指令
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cmd]
+              properties:
+                cmd:
+                  type: array
+                  items: { type: string }
+            example:
+              cmd: ["python", "/workspace/app.py"]
+      responses:
+        '200':
+          description: 執行結果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exitCode: { type: integer }
+                  logs: { type: string }
+                  taskId: { type: string }
+  /v1/jobs:
+    post:
+      summary: 執行一次性作業（將主機資料夾掛載至容器並執行命令）
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hostDir, containerDir]
+              properties:
+                image: { type: string, description: 可省略，系統自動偵測 }
+                hostDir: { type: string, description: 宿主機資料夾路徑（絕對）或伺服器回傳的 dir 將由系統映射 }
+                containerDir: { type: string, example: /workspace }
+                cmd:
+                  type: array
+                  items: { type: string }
+                  description: 可省略，系統自動偵測（優先: app 可執行 > run.sh > app.py > app.go）
+            examples:
+              autodetect:
+                summary: 自動偵測（推薦）
+                value:
+                  hostDir: ./data/u123/20250101T000000Z
+                  containerDir: /workspace
+              explicitPython:
+                summary: 顯式 Python
+                value:
+                  image: python:3.11-slim
+                  hostDir: ./data/u123/20250101T000000Z
+                  containerDir: /workspace
+                  cmd: ["python", "/workspace/app.py"]
+      responses:
+        '200':
+          description: 執行結果
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  exitCode: { type: integer, format: int32 }
+                  logs: { type: string }
 components:
   securitySchemes:
     bearerAuth:

@@ -1,3 +1,0 @@
-CSV lines: 4
-JSON bytes: 56
-done
